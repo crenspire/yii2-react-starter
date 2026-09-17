@@ -1,88 +1,54 @@
-import { Link, useForm, Head, router, usePage } from '@inertiajs/react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import AuthLayout from '@/components/layouts/AuthLayout';
-import { ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner';
-import { addCsrfToData } from '@/lib/csrf';
+import { Head, Link, useForm } from '@inertiajs/react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
+import { FormField } from '@/components/FormField'
+import AuthLayout from '@/components/layouts/AuthLayout'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 export default function ForgotPassword() {
-  const { props } = usePage();
-  const { data, setData, post, processing } = useForm({
+  const { data, setData, post, processing, errors, reset } = useForm({
     email: '',
-  });
+  })
 
   const submit = (e) => {
-    e.preventDefault();
-    
-    // Get CSRF token from Inertia shared props (more reliable than meta tags)
-    const csrfToken = props.csrfToken || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    const csrfParam = props.csrfParam || document.querySelector('meta[name="csrf-param"]')?.getAttribute('content');
-    
-    const formData = {
-      ...data,
-      ...(csrfToken && csrfParam ? { [csrfParam]: csrfToken } : {}),
-    };
-    
-    router.post('/auth/forgot-password', formData, {
-      onSuccess: () => {
-        toast.success('Password reset link sent to your email');
-      },
-      onError: (errors) => {
-        Object.values(errors).forEach((error) => {
-          toast.error(error);
-        });
-      },
-    });
-  };
+    e.preventDefault()
+    post('/auth/forgot-password', {
+      onSuccess: () => reset(),
+    })
+  }
 
   return (
-    <>
-      <Head title="Forgot Password | Yii2 - Modern Starter Kit" />
-      <AuthLayout>
-      <Card className="border-0 shadow-none px-6">
-        <CardHeader className="space-y-1 px-0">
-          <CardTitle className="text-2xl font-semibold tracking-tight">Forgot password</CardTitle>
-          <CardDescription className="text-base">
-            Enter your email address and we'll send you a link to reset your password
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-0">
-          <form onSubmit={submit} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={data.email}
-                onChange={(e) => setData('email', e.target.value)}
-                disabled={processing}
-                autoFocus
-                required
-                placeholder="Enter your email"
-              />
-            </div>
+    <AuthLayout
+      title="Forgot your password?"
+      description="Enter your email and we'll send you a link to reset it"
+      footer={(
+        <Link href="/auth/login" className="text-muted-foreground hover:text-foreground inline-flex items-center gap-2 font-medium">
+          <ArrowLeft className="size-4" />
+          Back to sign in
+        </Link>
+      )}
+    >
+      <Head title="Forgot password" />
+      <form onSubmit={submit} className="grid gap-6">
+        <FormField id="email" label="Email" error={errors.email}>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            value={data.email}
+            onChange={e => setData('email', e.target.value)}
+            aria-invalid={!!errors.email}
+            required
+            autoFocus
+          />
+        </FormField>
 
-            <Button type="submit" variant="default" className="w-full" disabled={processing}>
-              {processing ? 'Sending...' : 'Send reset link'}
-            </Button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <Link
-              href="/auth/login"
-              className="text-sm text-primary hover:underline font-medium flex items-center justify-center"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to login
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
+        <Button type="submit" className="w-full" disabled={processing}>
+          {processing && <Loader2 className="animate-spin" />}
+          Send reset link
+        </Button>
+      </form>
     </AuthLayout>
-    </>
-  );
+  )
 }
-

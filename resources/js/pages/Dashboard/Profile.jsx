@@ -1,128 +1,79 @@
-import { Head, router, usePage } from '@inertiajs/react';
-import DashboardLayout from '@/components/layouts/DashboardLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useForm as useHookForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { useForm } from '@inertiajs/react';
-import { toast } from 'sonner';
-import { addCsrfToData } from '@/lib/csrf';
+import { Head, useForm, usePage } from '@inertiajs/react'
+import { BadgeCheck, CircleDashed, Loader2 } from 'lucide-react'
+import { FormField } from '@/components/FormField'
+import AppLayout from '@/components/layouts/AppLayout'
+import { PageHeader } from '@/components/page-header'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { initials } from '@/lib/format'
 
-const profileSchema = z.object({
-  name: z.string().min(3, 'Name must be at least 3 characters'),
-  email: z.string().email('Invalid email address'),
-});
+export default function Profile({ profile }) {
+  const { user } = usePage().props.auth
+  const { data, setData, put, processing, errors, isDirty, setDefaults } = useForm({
+    name: profile?.name || '',
+    email: profile?.email || '',
+  })
 
-export default function Profile({ user }) {
-  const { props } = usePage();
-  const inertiaForm = useForm({
-    name: user?.name || '',
-    email: user?.email || '',
-  });
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useHookForm({
-    resolver: zodResolver(profileSchema),
-    defaultValues: {
-      name: user?.name || '',
-      email: user?.email || '',
-    },
-  });
-
-  const onSubmit = (data) => {
-    // Get CSRF token from Inertia shared props (more reliable than meta tags)
-    const csrfToken = props.csrfToken || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    const csrfParam = props.csrfParam || document.querySelector('meta[name="csrf-param"]')?.getAttribute('content');
-    
-    const formData = {
-      ...data,
-      ...(csrfToken && csrfParam ? { [csrfParam]: csrfToken } : {}),
-    };
-    
-    // Use router.put directly to ensure data is sent correctly
-    router.put('/dashboard/profile', formData, {
-      onSuccess: () => {
-        toast.success('Profile updated successfully');
-      },
-      onError: (errors) => {
-        Object.values(errors).forEach((error) => {
-          if (Array.isArray(error)) {
-            error.forEach((err) => toast.error(err));
-          } else {
-            toast.error(error);
-          }
-        });
-      },
-    });
-  };
+  const submit = (e) => {
+    e.preventDefault()
+    put('/dashboard/profile', {
+      preserveScroll: true,
+      onSuccess: () => setDefaults(),
+    })
+  }
 
   return (
     <>
-      <Head title="Profile | Yii2 - Modern Starter Kit" />
-      <DashboardLayout user={props.user}>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Profile</h1>
-          <p className="text-muted-foreground">
-            Manage your account settings and preferences
-          </p>
-        </div>
+      <Head title="Profile" />
+      <PageHeader title="Profile" description="Manage how you appear and how we contact you." />
 
+      <form onSubmit={submit} className="max-w-3xl">
         <Card>
           <CardHeader>
-            <CardTitle>Profile Information</CardTitle>
-            <CardDescription>
-              Update your account's profile information
-            </CardDescription>
+            <div className="flex items-center gap-4">
+              <Avatar className="size-12">
+                <AvatarFallback>{initials(user?.name)}</AvatarFallback>
+              </Avatar>
+              <div className="grid gap-1">
+                <CardTitle>{user?.name}</CardTitle>
+                <CardDescription className="capitalize">{user?.role}</CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  {...register('name')}
-                  disabled={isSubmitting || inertiaForm.processing}
-                />
-                {errors.name && (
-                  <p className="text-sm text-destructive">
-                    {errors.name.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  {...register('email')}
-                  disabled={isSubmitting || inertiaForm.processing}
-                />
-                {errors.email && (
-                  <p className="text-sm text-destructive">
-                    {errors.email.message}
-                  </p>
-                )}
-              </div>
-
-              <Button 
-                type="submit" 
-                disabled={isSubmitting || inertiaForm.processing}
-              >
-                {isSubmitting || inertiaForm.processing ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </form>
+          <CardContent className="grid gap-6 md:grid-cols-2">
+            <FormField id="name" label="Name" error={errors.name}>
+              <Input id="name" autoComplete="name" value={data.name} onChange={e => setData('name', e.target.value)} aria-invalid={!!errors.name} required />
+            </FormField>
+            <FormField
+              id="email"
+              label="Email"
+              error={errors.email}
+              description="Changing your email marks it as unverified."
+              labelAction={(
+                <Badge variant="outline" className="text-muted-foreground px-1.5">
+                  {profile?.emailVerified
+                    ? <BadgeCheck className="fill-green-500 text-white dark:fill-green-400 dark:text-background" />
+                    : <CircleDashed />}
+                  {profile?.emailVerified ? 'Verified' : 'Unverified'}
+                </Badge>
+              )}
+            >
+              <Input id="email" type="email" autoComplete="email" value={data.email} onChange={e => setData('email', e.target.value)} aria-invalid={!!errors.email} required />
+            </FormField>
           </CardContent>
+          <CardFooter className="justify-end border-t">
+            <Button type="submit" disabled={processing || !isDirty}>
+              {processing && <Loader2 className="animate-spin" />}
+              Save changes
+            </Button>
+          </CardFooter>
         </Card>
-      </div>
-      </DashboardLayout>
+      </form>
     </>
-  );
+  )
 }
+
+Profile.layout = page => <AppLayout breadcrumbs={[{ title: 'Account' }, { title: 'Profile' }]}>{page}</AppLayout>

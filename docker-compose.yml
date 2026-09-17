@@ -1,9 +1,27 @@
-version: '2'
 services:
   php:
-    image: yiisoftware/yii2-php:7.4-apache
+    image: yiisoftware/yii2-php:8.3-apache
     volumes:
       - ~/.composer-docker/cache:/root/.composer/cache:delegated
       - ./:/app:delegated
     ports:
       - '8000:80'
+    environment:
+      # Real environment variables take precedence over values in .env
+      DB_DSN: 'mysql:host=db;dbname=yii2basic'
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+    depends_on:
+      - db
+
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_DATABASE: yii2basic
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db-data:/var/lib/mysql
+
+volumes:
+  db-data:

@@ -1,239 +1,125 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
-import DashboardLayout from '@/components/layouts/DashboardLayout';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner';
-import { useForm as useHookForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { Head, Link, useForm } from '@inertiajs/react'
+import { Loader2 } from 'lucide-react'
+import { FormField } from '@/components/FormField'
+import AppLayout from '@/components/layouts/AppLayout'
+import { PageHeader } from '@/components/page-header'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 
-// Validation schema - password validation is handled in onSubmit
-const userSchema = z.object({
-  name: z.string().min(1, 'Name is required').min(2, 'Name must be at least 2 characters'),
-  email: z.string().min(1, 'Email is required').email('Please enter a valid email address'),
-  password: z.string().optional(),
-});
+const roleDescriptions = {
+  user: 'Can manage their own profile and settings.',
+  admin: 'Can also manage every user, including roles.',
+}
 
-export default function UserForm({ user, errors: serverErrors }) {
-  const { props } = usePage();
-  const isEdit = !!user?.id;
+export default function UserForm({ user, roles, isSelf }) {
+  const isEdit = !!user?.id
+  const { data, setData, post, put, processing, errors } = useForm({
+    name: user?.name || '',
+    email: user?.email || '',
+    password: '',
+    role: user?.role || 'user',
+  })
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-    watch,
-    setValue,
-  } = useHookForm({
-    resolver: zodResolver(userSchema),
-    defaultValues: {
-      name: user?.name || '',
-      email: user?.email || '',
-      password: '',
-    },
-  });
-
-  const onSubmit = (data) => {
-    // Get CSRF token from meta tag or props
-    const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    const metaParam = document.querySelector('meta[name="csrf-param"]')?.getAttribute('content');
-    
-    const csrfToken = metaToken || props.csrfToken;
-    const csrfParam = metaParam || props.csrfParam;
-    
-    if (!csrfToken || !csrfParam) {
-      toast.error('CSRF token missing. Please refresh the page.');
-      return;
-    }
-
-    // Validate password for create
-    if (!isEdit && !data.password) {
-      toast.error('Password is required');
-      return;
-    }
-
-    // Create form data with CSRF token
-    const formData = {
-      ...data,
-      [csrfParam]: csrfToken,
-    };
-
-    // Remove password if it's empty (for edit)
-    if (isEdit && !data.password) {
-      delete formData.password;
-    }
-
-    const url = isEdit ? `/users/${user.id}/edit` : '/users/create';
-    const method = isEdit ? 'put' : 'post';
-
-    router[method](url, formData, {
-      preserveScroll: true,
-      onSuccess: (page) => {
-        // Check if we navigated to the users list page (success)
-        // Inertia::location() causes a full page reload, so we check the component
-        const isOnUsersList = page?.component === 'Users/Index';
-        
-        // Check if we're still on the form page (validation failed)
-        const isStillOnForm = page?.component === 'Users/Form';
-        
-        // Check for errors in props
-        const hasErrors = (page?.props?.errors && Object.keys(page.props.errors).length > 0) ||
-                         (page?.props?.serverErrors && Object.keys(page.props.serverErrors).length > 0);
-        
-        // Only show success toast if we navigated to users list (success)
-        if (isOnUsersList) {
-          toast.success(isEdit ? 'User updated successfully' : 'User created successfully');
-        }
-        
-        // If we're still on the form, don't show success toast
-        // Errors are already displayed inline
-      },
-      onError: (errors) => {
-        console.error('Form submission error:', errors);
-        // Show error toast for HTTP errors
-        if (errors && typeof errors === 'object') {
-          Object.values(errors).forEach((error) => {
-            if (Array.isArray(error)) {
-              error.forEach((err) => toast.error(err));
-            } else if (typeof error === 'string') {
-              toast.error(error);
-            }
-          });
-        }
-      },
-    });
-  };
-
-  // Merge all error sources: react-hook-form errors, server errors prop, and page props errors
-  const allErrors = {};
-  
-  // Get errors from page props (Inertia standard location)
-  const pageErrors = props?.errors || {};
-  
-  // Process react-hook-form errors
-  if (errors) {
-    Object.keys(errors).forEach(key => {
-      const errorValue = errors[key];
-      if (errorValue?.message) {
-        allErrors[key] = errorValue.message;
-      }
-    });
-  }
-  
-  // Process server errors prop (from backend)
-  if (serverErrors) {
-    Object.keys(serverErrors).forEach(key => {
-      const errorValue = serverErrors[key];
-      allErrors[key] = Array.isArray(errorValue) ? errorValue[0] : errorValue;
-    });
-  }
-  
-  // Process page props errors (Inertia standard)
-  if (pageErrors) {
-    Object.keys(pageErrors).forEach(key => {
-      const errorValue = pageErrors[key];
-      if (!allErrors[key]) { // Don't override if already set
-        allErrors[key] = Array.isArray(errorValue) ? errorValue[0] : errorValue;
-      }
-    });
+  const submit = (e) => {
+    e.preventDefault()
+    const options = { preserveScroll: true }
+    if (isEdit)
+      put(`/users/${user.id}/edit`, options)
+    else
+      post('/users/create', options)
   }
 
   return (
     <>
-      <Head title={isEdit ? 'Edit User' : 'Create User'} />
-      <DashboardLayout user={props.user}>
-        <div className="space-y-6">
-          <div className="flex items-center gap-4">
-            <Link href="/users">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">
-                {isEdit ? 'Edit User' : 'Create User'}
-              </h1>
-              <p className="text-muted-foreground">
-                {isEdit ? 'Update user information' : 'Add a new user to the system'}
-              </p>
+      <Head title={isEdit ? `Edit ${user.name}` : 'Add user'} />
+      <PageHeader
+        title={isEdit ? 'Edit user' : 'Add user'}
+        description={isEdit ? `Update ${user.name}'s account details and access.` : 'Create an account for someone on your team.'}
+      />
+
+      <form onSubmit={submit} className="max-w-3xl">
+        <Card>
+          <CardHeader>
+            <CardTitle>Account details</CardTitle>
+            <CardDescription>The name and email address used to sign in.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              <FormField id="name" label="Name" error={errors.name}>
+                <Input id="name" value={data.name} onChange={e => setData('name', e.target.value)} aria-invalid={!!errors.name} required />
+              </FormField>
+              <FormField id="email" label="Email" error={errors.email}>
+                <Input id="email" type="email" value={data.email} onChange={e => setData('email', e.target.value)} aria-invalid={!!errors.email} required />
+              </FormField>
             </div>
-          </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>User Information</CardTitle>
-              <CardDescription>
-                Enter the user's details below
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Name *</Label>
-                  <Input
-                    id="name"
-                    type="text"
-                    {...register('name')}
-                    className={allErrors.name ? 'border-destructive' : ''}
-                  />
-                  {allErrors.name && (
-                    <p className="text-sm text-destructive">
-                      {allErrors.name}
-                    </p>
-                  )}
-                </div>
+            <Separator />
 
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    {...register('email')}
-                    className={allErrors.email ? 'border-destructive' : ''}
-                  />
-                  {allErrors.email && (
-                    <p className="text-sm text-destructive">
-                      {allErrors.email}
-                    </p>
-                  )}
-                </div>
+            <div className="grid gap-6 md:grid-cols-2">
+              <FormField
+                id="password"
+                label={isEdit ? 'New password' : 'Password'}
+                error={errors.password}
+                description={isEdit ? 'Leave blank to keep the current password.' : 'At least 8 characters.'}
+              >
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={data.password}
+                  onChange={e => setData('password', e.target.value)}
+                  aria-invalid={!!errors.password}
+                  required={!isEdit}
+                />
+              </FormField>
 
-                <div className="space-y-2">
-                  <Label htmlFor="password">
-                    Password {isEdit ? '(leave blank to keep current password)' : '*'}
-                  </Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    {...register('password')}
-                    className={allErrors.password ? 'border-destructive' : ''}
-                  />
-                  {allErrors.password && (
-                    <p className="text-sm text-destructive">
-                      {allErrors.password}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex gap-2">
-                  <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting ? 'Saving...' : isEdit ? 'Update User' : 'Create User'}
-                  </Button>
-                  <Link href="/users">
-                    <Button type="button" variant="outline">
-                      Cancel
-                    </Button>
-                  </Link>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-      </DashboardLayout>
+              <FormField
+                id="role"
+                label="Role"
+                error={errors.role}
+                description={isSelf ? 'You can\'t change your own role.' : roleDescriptions[data.role]}
+              >
+                <Select value={data.role} onValueChange={value => setData('role', value)} disabled={isSelf}>
+                  <SelectTrigger id="role" className="w-full" aria-invalid={!!errors.role}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(roles || {}).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
+            </div>
+          </CardContent>
+          <CardFooter className="justify-end gap-2 border-t">
+            <Button variant="outline" asChild>
+              <Link href="/users">Cancel</Link>
+            </Button>
+            <Button type="submit" disabled={processing}>
+              {processing && <Loader2 className="animate-spin" />}
+              {isEdit ? 'Save changes' : 'Create user'}
+            </Button>
+          </CardFooter>
+        </Card>
+      </form>
     </>
-  );
+  )
 }
 
+UserForm.layout = page => (
+  <AppLayout
+    breadcrumbs={[
+      { title: 'Users', href: '/users' },
+      ...(page.props.user?.id
+        ? [{ title: page.props.user.name, href: `/users/${page.props.user.id}` }, { title: 'Edit' }]
+        : [{ title: 'Add user' }]),
+    ]}
+  >
+    {page}
+  </AppLayout>
+)

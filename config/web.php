@@ -3,6 +3,16 @@
 $params = require __DIR__ . '/params.php';
 $db = require __DIR__ . '/db.php';
 
+$mailer = [
+    'class' => \yii\symfonymailer\Mailer::class,
+    'viewPath' => '@app/mail',
+    // Write emails to runtime/mail instead of sending them
+    'useFileTransport' => (bool) env('MAILER_USE_FILE_TRANSPORT', true),
+];
+if (env('MAILER_DSN')) {
+    $mailer['transport'] = ['dsn' => env('MAILER_DSN')];
+}
+
 $config = [
     'id' => 'basic',
     'basePath' => dirname(__DIR__),
@@ -12,18 +22,12 @@ $config = [
         '@npm'   => '@vendor/npm-asset',
     ],
     'components' => [
-         'view' => [
-            'renderers' => [
-                'inertia' => \Crenspire\Yii2Inertia\ViewRenderer::class,
-            ],
-        ],
         'request' => [
-            // !!! insert a secret key in the following (if it is empty) - this is required by cookie validation
-            'cookieValidationKey' => '7lNroFDaY_F0Sa-UHP2O_2uwMTPiLk8v',
-            // Enable JSON parser for Inertia requests
-            'parsers' => [
-                'application/json' => 'yii\web\JsonParser',
-            ],
+            'cookieValidationKey' => env('COOKIE_VALIDATION_KEY'),
+            'csrfCookie' => ['httpOnly' => true, 'sameSite' => 'Lax'],
+        ],
+        'session' => [
+            'cookieParams' => ['httponly' => true, 'samesite' => 'Lax'],
         ],
         'cache' => [
             'class' => 'yii\caching\FileCache',
@@ -31,23 +35,36 @@ $config = [
         'user' => [
             'identityClass' => 'app\models\User',
             'enableAutoLogin' => true,
+            'loginUrl' => ['/auth/login'],
+            'identityCookie' => ['name' => '_identity', 'httpOnly' => true, 'sameSite' => 'Lax'],
+        ],
+        'inertia' => [
+            'class' => \Crenspire\Yii2Inertia\Manager::class,
+            'vite' => [
+                'devServerUrl' => YII_ENV_DEV ? (env('VITE_DEV_SERVER') ?: null) : null,
+                'reactRefresh' => true,
+            ],
         ],
         'errorHandler' => [
             'class' => \app\components\InertiaErrorHandler::class,
-            'errorAction' => 'home/error',
         ],
-        'mailer' => [
-            'class' => \yii\symfonymailer\Mailer::class,
-            'viewPath' => '@app/mail',
-            // send all mails to a file by default.
-            'useFileTransport' => true,
-        ],
+        'mailer' => $mailer,
         'log' => [
             'traceLevel' => YII_DEBUG ? 3 : 0,
             'targets' => [
                 [
                     'class' => 'yii\log\FileTarget',
                     'levels' => ['error', 'warning'],
+                    // Never write credentials passed to PHP as server variables into the logs
+                    'maskVars' => [
+                        '_SERVER.HTTP_AUTHORIZATION',
+                        '_SERVER.PHP_AUTH_USER',
+                        '_SERVER.PHP_AUTH_PW',
+                        '_SERVER.DB_PASSWORD',
+                        '_SERVER.TEST_DB_PASSWORD',
+                        '_SERVER.COOKIE_VALIDATION_KEY',
+                        '_SERVER.MAILER_DSN',
+                    ],
                 ],
             ],
         ],
@@ -55,34 +72,17 @@ $config = [
         'urlManager' => [
             'enablePrettyUrl' => true,
             'showScriptName' => false,
-            'enableStrictParsing' => false,
             'rules' => [
                 '' => 'home/index',
-                'login' => 'auth/login',
-                'register' => 'auth/register',
-                'logout' => 'auth/logout',
-                'forgot-password' => 'auth/forgot-password',
-                'reset-password' => 'auth/reset-password',
                 'dashboard' => 'dashboard/index',
-                'dashboard/<action:\w+>' => 'dashboard/<action>',
+                'dashboard/<action:[\w-]+>' => 'dashboard/<action>',
                 'users' => 'user/index',
                 'users/create' => 'user/create',
                 'users/<id:\d+>' => 'user/view',
                 'users/<id:\d+>/edit' => 'user/update',
                 'users/<id:\d+>/delete' => 'user/delete',
-                '<controller:\w+>/<id:\d+>' => '<controller>/view',
-                '<controller:\w+>/<action:\w+>/<id:\d+>' => '<controller>/<action>',
-                '<controller:\w+>/<action:\w+>' => '<controller>/<action>',
             ],
         ],
-        /*
-        'urlManager' => [
-            'enablePrettyUrl' => true,
-            'showScriptName' => false,
-            'rules' => [
-            ],
-        ],
-        */
     ],
     'params' => $params,
 ];

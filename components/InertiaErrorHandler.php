@@ -3,21 +3,28 @@
 namespace app\components;
 
 use Yii;
-use yii\web\ErrorHandler as BaseErrorHandler;
-use yii\web\NotFoundHttpException;
+use yii\web\ErrorHandler;
+use yii\web\HttpException;
+use yii\web\Response;
 use Crenspire\Yii2Inertia\Inertia;
 
 /**
- * Custom error handler that renders React pages via Inertia for 4xx and 5xx errors
+ * Renders HTTP errors as the React `Error` page via Inertia.
+ *
+ * In debug mode, unexpected (non-HTTP) exceptions still use Yii's detailed exception page.
  */
-class InertiaErrorHandler extends BaseErrorHandler
+class InertiaErrorHandler extends ErrorHandler
 {
     /**
-     * Renders the exception.
-     * @param \Exception $exception the exception to be rendered.
+     * {@inheritdoc}
      */
     protected function renderException($exception)
     {
+        if (YII_DEBUG && !$exception instanceof HttpException) {
+            parent::renderException($exception);
+            return;
+        }
+
         if (Yii::$app->has('response')) {
             $response = Yii::$app->getResponse();
             // reset parameters of response to avoid interference with partially created response data
@@ -27,56 +34,47 @@ class InertiaErrorHandler extends BaseErrorHandler
             $response->data = null;
             $response->content = null;
         } else {
-            $response = new \yii\web\Response();
+            $response = new Response();
         }
 
         $response->setStatusCodeByException($exception);
+        $status = $response->getStatusCode();
 
-        $statusCode = $exception->statusCode ?? 500;
-        
-        // Define which error codes should show the NotFound page
-        // 400 errors are validation errors and should be handled by forms, not redirected
-        $showNotFoundPage = in_array($statusCode, [401, 403, 404, 500, 502, 503, 504]);
+        try {
+            Inertia::render('Error', [
+                'status' => $status,
+                'message' => $this->errorMessage($exception, $status),
+            ])->send();
+        } catch (\Throwable $e) {
+            // Rendering the page failed (e.g. inside the layout); fall back to Yii's error output
+            parent::renderException($exception);
+        }
+    }
 
-        // For specific error codes, render React NotFound page via Inertia
-        if ($showNotFoundPage) {
-            $message = match($statusCode) {
-                401 => 'Unauthorized - Please log in to continue',
-                403 => 'Forbidden - You do not have permission to access this resource',
-                404 => 'Page not found',
-                500 => 'Internal server error',
-                502 => 'Bad gateway',
-                503 => 'Service unavailable',
-                504 => 'Gateway timeout',
-                default => 'An error occurred',
-            };
+    /**
+     * Shows the full Yii debug page inside Inertia's error modal instead of plain text.
+     *
+     * {@inheritdoc}
+     */
+    protected function shouldRenderSimpleHtml()
+    {
+        return YII_ENV_TEST || (Yii::$app->request->getIsAjax() && !Inertia::isInertiaRequest(Yii::$app->request));
+    }
 
-            // Render Inertia page and send response
-            $inertiaResponse = Inertia::render('NotFound', [
-                'status' => $statusCode,
-                'message' => $message,
-            ]);
-            
-            // Inertia::render returns a Response object, send it directly
-            $inertiaResponse->send();
-            return;
+    /**
+     * Client errors show the exception's message (written for users, e.g. "The requested user does not
+     * exist."); server errors show a generic message so internals are never leaked.
+     *
+     * @param \Throwable $exception
+     * @param int $status
+     * @return string
+     */
+    private function errorMessage($exception, $status)
+    {
+        if ($exception instanceof HttpException && $status < 500 && $exception->getMessage() !== '') {
+            return $exception->getMessage();
         }
 
-        // For 400 errors, completely skip the error handler
-        // 400 errors should be handled by controllers and returned as Inertia responses with errors
-        // If a 400 exception reaches here, it means it wasn't handled by the controller
-        // In this case, we should not catch it - let it be handled by the normal request flow
-        // The error handler should not interfere with 400 errors at all
-        if ($statusCode === 400) {
-            // Don't handle 400 errors here - they should be handled by controllers
-            // Return early without rendering anything
-            // This allows the exception to be handled by the normal request flow
-            // Controllers should catch 400 errors and return Inertia responses with errors
-            return;
-        }
-
-        // For other errors, use parent implementation
-        parent::renderException($exception);
+        return Response::$httpStatuses[$status] ?? 'An error occurred';
     }
 }
-

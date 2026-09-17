@@ -1,93 +1,76 @@
-import { Head, Link, usePage } from '@inertiajs/react';
-import DashboardLayout from '@/components/layouts/DashboardLayout';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Edit } from 'lucide-react';
+import { Head, Link } from '@inertiajs/react'
+import { BadgeCheck, CircleDashed, Pencil, ShieldCheck, UserRound } from 'lucide-react'
+import AppLayout from '@/components/layouts/AppLayout'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { formatDateTime, formatRelative, initials } from '@/lib/format'
 
-export default function UserView({ user }) {
-  const { props } = usePage();
-  
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-  
+function Detail({ label, children }) {
   return (
-    <>
-      <Head title={`User: ${user.name}`} />
-      <DashboardLayout user={props.user}>
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/users">
-                <Button variant="ghost" size="icon">
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-              </Link>
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">{user.name}</h1>
-                <p className="text-muted-foreground">User Details</p>
-              </div>
-            </div>
-            <Link href={`/users/${user.id}/edit`}>
-              <Button>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit User
-              </Button>
-            </Link>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>User Information</CardTitle>
-              <CardDescription>
-                Detailed information about the user
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">ID</label>
-                  <p className="text-sm font-medium">{user.id}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Name</label>
-                  <p className="text-sm font-medium">{user.name}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Email</label>
-                  <p className="text-sm font-medium">{user.email}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Email Verified</label>
-                  <p className="text-sm font-medium">
-                    {user.email_verified_at ? (
-                      <span className="text-green-600">Verified</span>
-                    ) : (
-                      <span className="text-muted-foreground">Not verified</span>
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Created At</label>
-                  <p className="text-sm font-medium">{formatDate(user.created_at)}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Updated At</label>
-                  <p className="text-sm font-medium">{formatDate(user.updated_at)}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </DashboardLayout>
-    </>
-  );
+    <div className="grid gap-1 py-3 sm:grid-cols-3 sm:gap-4">
+      <dt className="text-muted-foreground text-sm">{label}</dt>
+      <dd className="text-sm font-medium sm:col-span-2">{children}</dd>
+    </div>
+  )
 }
 
+export default function UserView({ user }) {
+  return (
+    <>
+      <Head title={user.name} />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4">
+          <Avatar className="size-14">
+            <AvatarFallback className="text-lg">{initials(user.name)}</AvatarFallback>
+          </Avatar>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">{user.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-muted-foreground text-sm">{user.email}</span>
+              <Badge variant="outline" className="text-muted-foreground capitalize">
+                {user.role === 'admin' ? <ShieldCheck /> : <UserRound />}
+                {user.role}
+              </Badge>
+            </div>
+          </div>
+        </div>
+        <Button asChild>
+          <Link href={`/users/${user.id}/edit`}>
+            <Pencil />
+            Edit user
+          </Link>
+        </Button>
+      </div>
+
+      <Card className="max-w-3xl">
+        <CardHeader>
+          <CardTitle>Account</CardTitle>
+          <CardDescription>Details about this user's account.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <dl className="divide-y">
+            <Detail label="User ID">{user.id}</Detail>
+            <Detail label="Name">{user.name}</Detail>
+            <Detail label="Email">{user.email}</Detail>
+            <Detail label="Email status">
+              <Badge variant="outline" className="text-muted-foreground px-1.5">
+                {user.email_verified_at
+                  ? <BadgeCheck className="fill-green-500 text-white dark:fill-green-400 dark:text-background" />
+                  : <CircleDashed />}
+                {user.email_verified_at ? `Verified ${formatRelative(user.email_verified_at)}` : 'Unverified'}
+              </Badge>
+            </Detail>
+            <Detail label="Joined">{formatDateTime(user.created_at)}</Detail>
+            <Detail label="Last updated">{formatDateTime(user.updated_at)}</Detail>
+          </dl>
+        </CardContent>
+      </Card>
+    </>
+  )
+}
+
+UserView.layout = page => (
+  <AppLayout breadcrumbs={[{ title: 'Users', href: '/users' }, { title: page.props.user.name }]}>{page}</AppLayout>
+)

@@ -3,9 +3,11 @@
 namespace app\models;
 
 use Yii;
-use yii\db\ActiveRecord;
-use yii\web\IdentityInterface;
+use yii\base\NotSupportedException;
 use yii\behaviors\TimestampBehavior;
+use yii\db\ActiveRecord;
+use yii\db\Expression;
+use yii\web\IdentityInterface;
 use app\behaviors\SoftDeleteBehavior;
 
 /**
@@ -14,26 +16,41 @@ use app\behaviors\SoftDeleteBehavior;
  * @property integer $id
  * @property string $name
  * @property string $email
- * @property string $password
- * @property string $password_hash (stored)
+ * @property string $role
  * @property string $remember_token
  * @property integer $current_team_id
  * @property string $profile_photo_path
- * @property string $two_factor_secret
- * @property string $two_factor_recovery_codes
- * @property timestamp $two_factor_confirmed_at
- * @property string $stripe_id
- * @property string $pm_type
- * @property string $pm_last_four
- * @property timestamp $trial_ends_at
- * @property timestamp $email_verified_at
- * @property timestamp $deleted_at
- * @property timestamp $created_at
- * @property timestamp $updated_at
+ * @property string $email_verified_at
+ * @property string $deleted_at
+ * @property string $created_at
+ * @property string $updated_at
+ *
+ * The `password` database column stores the password hash. Assign a plain-text password to the
+ * virtual $password property; it is hashed in beforeSave().
+ *
+ * @mixin SoftDeleteBehavior
  */
 class User extends ActiveRecord implements IdentityInterface
 {
-    public $password; // Virtual attribute for password input
+    const ROLE_ADMIN = 'admin';
+    const ROLE_USER = 'user';
+
+    /** Self sign-up: name, email and password */
+    const SCENARIO_REGISTER = 'register';
+    /** Admin creating a user: password required, role assignable */
+    const SCENARIO_ADMIN_CREATE = 'admin-create';
+    /** Admin editing a user: password optional, role assignable */
+    const SCENARIO_ADMIN_UPDATE = 'admin-update';
+
+    /**
+     * @var string|null plain-text password input (virtual attribute)
+     */
+    public $password;
+
+    /**
+     * @var string|null password confirmation input (virtual attribute)
+     */
+    public $password_confirm;
 
     /**
      * {@inheritdoc}
@@ -51,20 +68,44 @@ class User extends ActiveRecord implements IdentityInterface
         return [
             [
                 'class' => TimestampBehavior::class,
-                'value' => new \yii\db\Expression('NOW()'),
+                'value' => new Expression('CURRENT_TIMESTAMP'),
             ],
             SoftDeleteBehavior::class,
         ];
     }
 
     /**
-     * Override find() to exclude soft-deleted records by default
-     * 
+     * Excludes soft-deleted records. Use findWithTrashed() to include them.
+     *
      * @return \yii\db\ActiveQuery
      */
     public static function find()
     {
-        return parent::find()->andWhere(['deleted_at' => null]);
+        return parent::find()->andWhere([static::tableName() . '.deleted_at' => null]);
+    }
+
+    /**
+     * @return \yii\db\ActiveQuery query that includes soft-deleted records
+     */
+    public static function findWithTrashed()
+    {
+        return parent::find();
+    }
+
+    /**
+     * Only the attributes listed here can be mass-assigned with load().
+     * Timestamps, verification state, role (outside admin scenarios) and tokens never can.
+     *
+     * {@inheritdoc}
+     */
+    public function scenarios()
+    {
+        return [
+            self::SCENARIO_DEFAULT => ['name', 'email'],
+            self::SCENARIO_REGISTER => ['name', 'email', 'password', 'password_confirm'],
+            self::SCENARIO_ADMIN_CREATE => ['name', 'email', 'password', 'role'],
+            self::SCENARIO_ADMIN_UPDATE => ['name', 'email', 'password', 'role'],
+        ];
     }
 
     /**
@@ -73,22 +114,36 @@ class User extends ActiveRecord implements IdentityInterface
     public function rules()
     {
         return [
+            [['name', 'email'], 'trim'],
+            ['email', 'filter', 'filter' => 'mb_strtolower'],
             [['name', 'email'], 'required'],
+            [['name', 'email'], 'string', 'max' => 255],
             ['email', 'email'],
-            ['email', 'unique', 'filter' => function ($query) {
-                // Exclude current user when updating
-                if (!$this->isNewRecord) {
-                    $query->andWhere(['!=', 'id', $this->id]);
-                }
-            }],
-            ['name', 'string', 'max' => 255],
-            ['password', 'string', 'min' => 6],
-            ['password', 'required', 'on' => ['register', 'create']],
-            ['remember_token', 'string', 'max' => 100],
-            ['current_team_id', 'integer'],
-            ['profile_photo_path', 'string', 'max' => 2048],
-            [['email_verified_at', 'two_factor_confirmed_at', 'trial_ends_at', 'deleted_at'], 'safe'],
+            ['email', 'validateEmailUnique'],
+            ['password', 'required', 'on' => [self::SCENARIO_REGISTER, self::SCENARIO_ADMIN_CREATE]],
+            ['password', 'string', 'min' => 8, 'max' => 72],
+            ['password_confirm', 'required', 'on' => self::SCENARIO_REGISTER],
+            ['password_confirm', 'compare', 'compareAttribute' => 'password', 'message' => 'Passwords do not match.'],
+            ['role', 'required', 'on' => [self::SCENARIO_ADMIN_CREATE, self::SCENARIO_ADMIN_UPDATE]],
+            ['role', 'in', 'range' => array_keys(self::roles())],
         ];
+    }
+
+    /**
+     * Emails must be unique across all users, including soft-deleted ones, because the
+     * database enforces a unique index on the column.
+     *
+     * @param string $attribute
+     */
+    public function validateEmailUnique($attribute)
+    {
+        $query = static::findWithTrashed()->andWhere(['email' => $this->$attribute]);
+        if (!$this->isNewRecord) {
+            $query->andWhere(['!=', 'id', $this->id]);
+        }
+        if ($query->exists()) {
+            $this->addError($attribute, 'This email address has already been taken.');
+        }
     }
 
     /**
@@ -100,15 +155,44 @@ class User extends ActiveRecord implements IdentityInterface
             'id' => 'ID',
             'name' => 'Name',
             'email' => 'Email',
+            'role' => 'Role',
             'password' => 'Password',
-            'remember_token' => 'Remember Token',
-            'current_team_id' => 'Current Team ID',
-            'profile_photo_path' => 'Profile Photo Path',
+            'password_confirm' => 'Password confirmation',
             'email_verified_at' => 'Email Verified At',
             'created_at' => 'Created At',
             'updated_at' => 'Updated At',
             'deleted_at' => 'Deleted At',
         ];
+    }
+
+    /**
+     * Attributes exposed when the model is serialized (e.g. passed to Inertia as props).
+     * The password hash and remember token are never included.
+     *
+     * {@inheritdoc}
+     */
+    public function fields()
+    {
+        return ['id', 'name', 'email', 'role', 'email_verified_at', 'created_at', 'updated_at'];
+    }
+
+    /**
+     * @return array<string, string> role value => label
+     */
+    public static function roles()
+    {
+        return [
+            self::ROLE_USER => 'User',
+            self::ROLE_ADMIN => 'Admin',
+        ];
+    }
+
+    /**
+     * @return bool
+     */
+    public function isAdmin()
+    {
+        return $this->role === self::ROLE_ADMIN;
     }
 
     /**
@@ -124,29 +208,18 @@ class User extends ActiveRecord implements IdentityInterface
      */
     public static function findIdentityByAccessToken($token, $type = null)
     {
-        // Use PersonalAccessToken model for token-based auth
-        $tokenModel = PersonalAccessToken::findOne(['token' => $token]);
-        if ($tokenModel && !$tokenModel->isExpired()) {
-            return static::findIdentity($tokenModel->tokenable_id);
-        }
-        return null;
+        throw new NotSupportedException('Access token authentication is not implemented.');
     }
 
     /**
-     * Finds user by email
+     * Finds an active (not soft-deleted) user by email
      *
      * @param string $email
      * @return static|null
      */
     public static function findByEmail($email)
     {
-        try {
-            return static::findOne(['email' => $email]);
-        } catch (\Exception $e) {
-            // Log the error but return null to allow graceful error handling
-            Yii::error('Error finding user by email: ' . $e->getMessage(), 'application');
-            return null;
-        }
+        return static::findOne(['email' => mb_strtolower(trim((string) $email))]);
     }
 
     /**
@@ -170,7 +243,8 @@ class User extends ActiveRecord implements IdentityInterface
      */
     public function validateAuthKey($authKey)
     {
-        return $this->remember_token === $authKey;
+        return is_string($authKey) && is_string($this->remember_token)
+            && hash_equals($this->remember_token, $authKey);
     }
 
     /**
@@ -181,27 +255,26 @@ class User extends ActiveRecord implements IdentityInterface
      */
     public function validatePassword($password)
     {
-        // Get the hashed password from database (stored in 'password' column)
-        $hashedPassword = $this->getAttribute('password');
-        if (empty($hashedPassword)) {
+        $hash = $this->getAttribute('password');
+        if (empty($hash) || !is_string($password) || $password === '') {
             return false;
         }
-        return Yii::$app->security->validatePassword($password, $hashedPassword);
+        return Yii::$app->security->validatePassword($password, $hash);
     }
 
     /**
-     * Generates password hash from password and sets it to the model
-     * Note: This sets the virtual $password attribute, which will be hashed in beforeSave()
+     * Sets a new plain-text password; it is hashed when the model is saved.
      *
      * @param string $password
      */
     public function setPassword($password)
     {
-        $this->password = $password; // Virtual attribute, will be hashed in beforeSave()
+        $this->password = $password;
     }
 
     /**
-     * Generates "remember me" authentication token
+     * Generates a new auth key. Changing it invalidates "remember me" cookies and
+     * signs the user out of every other session.
      */
     public function generateRememberToken()
     {
@@ -210,7 +283,7 @@ class User extends ActiveRecord implements IdentityInterface
 
     /**
      * Check if email is verified
-     * 
+     *
      * @return bool
      */
     public function hasVerifiedEmail()
@@ -220,6 +293,8 @@ class User extends ActiveRecord implements IdentityInterface
 
     /**
      * Mark email as verified
+     *
+     * @return bool
      */
     public function markEmailAsVerified()
     {
@@ -232,60 +307,33 @@ class User extends ActiveRecord implements IdentityInterface
      */
     public function beforeSave($insert)
     {
-        if (parent::beforeSave($insert)) {
-            // Handle password hashing - password is a virtual attribute
-            // When password is set, hash it and store in the password column
-            if (!empty($this->password)) {
-                $hashedPassword = Yii::$app->security->generatePasswordHash($this->password);
-                $this->setAttribute('password', $hashedPassword);
-                // Clear virtual attribute
-                unset($this->password);
+        if (!parent::beforeSave($insert)) {
+            return false;
+        }
+
+        if ($insert) {
+            if (empty($this->role)) {
+                $this->role = self::ROLE_USER;
             }
-            if ($insert && empty($this->remember_token)) {
+            if (empty($this->remember_token)) {
                 $this->generateRememberToken();
             }
-            return true;
         }
-        return false;
-    }
 
-    /**
-     * Get current team relationship
-     * 
-     * @return \yii\db\ActiveQuery
-     */
-    public function getCurrentTeam()
-    {
-        return $this->hasOne(Team::class, ['id' => 'current_team_id']);
-    }
+        if ($this->password !== null && $this->password !== '') {
+            $this->setAttribute('password', Yii::$app->security->generatePasswordHash($this->password));
+            $this->password = null;
+            $this->password_confirm = null;
+            if (!$insert) {
+                // A password change signs out other sessions and remember-me cookies
+                $this->generateRememberToken();
+            }
+        }
 
-    /**
-     * Get teams relationship
-     * 
-     * @return \yii\db\ActiveQuery
-     */
-    public function getTeams()
-    {
-        return $this->hasMany(Team::class, ['user_id' => 'id']);
-    }
+        if (!$insert && $this->isAttributeChanged('email', false)) {
+            $this->email_verified_at = null;
+        }
 
-    /**
-     * Get subscriptions relationship
-     * 
-     * @return \yii\db\ActiveQuery
-     */
-    public function getSubscriptions()
-    {
-        return $this->hasMany(Subscription::class, ['user_id' => 'id']);
-    }
-
-    /**
-     * Get OAuth connections relationship
-     * 
-     * @return \yii\db\ActiveQuery
-     */
-    public function getOauthConnections()
-    {
-        return $this->hasMany(OauthConnection::class, ['user_id' => 'id']);
+        return true;
     }
 }

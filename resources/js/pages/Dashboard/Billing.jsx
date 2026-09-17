@@ -1,88 +1,65 @@
-import { Head, usePage } from '@inertiajs/react';
-import DashboardLayout from '@/components/layouts/DashboardLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CreditCard } from 'lucide-react';
+import { Head } from '@inertiajs/react'
+import { Check, Receipt } from 'lucide-react'
+import AppLayout from '@/components/layouts/AppLayout'
+import { PageHeader } from '@/components/page-header'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 
-export default function Billing({ user }) {
-  const { props } = usePage();
-  const invoices = [];
+const included = ['Unlimited users', 'Role-based access', 'Password resets by email', 'Light and dark themes']
 
+export default function Billing() {
   return (
     <>
-      <Head title="Billing | Yii2 - Modern Starter Kit" />
-      <DashboardLayout user={props.user}>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Billing</h1>
-          <p className="text-muted-foreground">
-            Manage your subscription and billing information
-          </p>
-        </div>
+      <Head title="Billing" />
+      <PageHeader title="Billing" description="Manage your plan and view invoices." />
+
+      <div className="grid max-w-3xl gap-6">
+        <Card>
+          <CardHeader>
+            <CardDescription>Current plan</CardDescription>
+            <CardTitle className="text-2xl font-semibold">
+              Free
+              <span className="text-muted-foreground text-base font-normal"> / forever</span>
+            </CardTitle>
+            <CardAction>
+              <Badge variant="secondary">Active</Badge>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <ul className="grid gap-2 text-sm sm:grid-cols-2">
+              {included.map(feature => (
+                <li key={feature} className="flex items-center gap-2">
+                  <Check className="text-muted-foreground size-4" />
+                  {feature}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+          <CardFooter className="justify-between gap-4 border-t">
+            <p className="text-muted-foreground text-sm">Paid plans aren&apos;t set up for this application yet.</p>
+            <Button disabled>Upgrade</Button>
+          </CardFooter>
+        </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Current Plan</CardTitle>
-            <CardDescription>
-              You are currently on the Free plan
-            </CardDescription>
+            <CardTitle>Invoices</CardTitle>
+            <CardDescription>Your billing history.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold">Free</p>
-                <p className="text-sm text-muted-foreground">$0/month</p>
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-10 text-center">
+              <div className="bg-muted flex size-10 items-center justify-center rounded-full">
+                <Receipt className="text-muted-foreground size-5" />
               </div>
-              <Button>Upgrade Plan</Button>
+              <p className="font-medium">No invoices yet</p>
+              <p className="text-muted-foreground text-sm">Invoices will appear here once you&apos;re on a paid plan.</p>
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Invoice History</CardTitle>
-            <CardDescription>
-              View and download your past invoices
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {invoices.length === 0 ? (
-              <div className="text-center py-8">
-                <CreditCard className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-sm text-muted-foreground">No invoices yet</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {invoices.map((invoice) => (
-                    <TableRow key={invoice.id}>
-                      <TableCell>{invoice.date}</TableCell>
-                      <TableCell>{invoice.amount}</TableCell>
-                      <TableCell>{invoice.status}</TableCell>
-                      <TableCell className="text-right">
-                        <Button size="sm">
-                          Download
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
       </div>
-      </DashboardLayout>
     </>
-  );
+  )
 }
 
+Billing.layout = page => <AppLayout breadcrumbs={[{ title: 'Account' }, { title: 'Billing' }]}>{page}</AppLayout>

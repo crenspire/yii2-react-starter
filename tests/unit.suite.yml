@@ -5,7 +5,7 @@
 
 actor: UnitTester
 modules:
-    enabled:
-      - Asserts
-      - Yii2:
-            part: [orm, email, fixtures]
+  enabled:
+    - Asserts
+    - Yii2:
+        part: [orm, email, fixtures]

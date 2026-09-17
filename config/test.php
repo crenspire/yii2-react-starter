@@ -1,46 +1,36 @@
 <?php
-$params = require __DIR__ . '/params.php';
-$db = require __DIR__ . '/test_db.php';
+
+use yii\helpers\ArrayHelper;
 
 /**
- * Application configuration shared by all test types
+ * Application configuration shared by all test types.
+ * Based on the web configuration so tests exercise the real routing, error handling and Inertia setup.
  */
-return [
+return ArrayHelper::merge(require __DIR__ . '/web.php', [
     'id' => 'basic-tests',
-    'basePath' => dirname(__DIR__),
-    'aliases' => [
-        '@bower' => '@vendor/bower-asset',
-        '@npm'   => '@vendor/npm-asset',
-    ],
     'language' => 'en-US',
     'components' => [
-        'db' => $db,
+        'db' => require __DIR__ . '/test_db.php',
+        'cache' => [
+            'class' => 'yii\caching\ArrayCache',
+        ],
+        // Fast password hashing keeps the suite quick
+        'security' => [
+            'passwordHashCost' => 4,
+        ],
         'mailer' => [
-            'class' => \yii\symfonymailer\Mailer::class,
-            'viewPath' => '@app/mail',
-            // send all mails to a file by default.
             'useFileTransport' => true,
-            'messageClass' => 'yii\symfonymailer\Message'
         ],
         'assetManager' => [
             'basePath' => __DIR__ . '/../web/assets',
         ],
-        'urlManager' => [
-            'showScriptName' => true,
-        ],
-        'user' => [
-            'identityClass' => 'app\models\User',
+        // Functional tests render pages without a frontend build
+        'inertia' => [
+            'vite' => ['throwOnMissingManifest' => false],
         ],
         'request' => [
             'cookieValidationKey' => 'test',
             'enableCsrfValidation' => false,
-            // but if you absolutely need it set cookie domain to localhost
-            /*
-            'csrfCookie' => [
-                'domain' => 'localhost',
-            ],
-            */
         ],
     ],
-    'params' => $params,
-];
+]);

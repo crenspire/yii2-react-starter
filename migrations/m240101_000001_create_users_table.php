@@ -12,6 +12,11 @@ class m240101_000001_create_users_table extends Migration
      */
     public function safeUp()
     {
+        $updatedAt = $this->timestamp()->notNull()->defaultExpression('CURRENT_TIMESTAMP');
+        if ($this->db->driverName === 'mysql') {
+            $updatedAt->append('ON UPDATE CURRENT_TIMESTAMP');
+        }
+
         $this->createTable('{{%users}}', [
             'id' => $this->primaryKey(),
             'name' => $this->string(255)->notNull(),
@@ -22,7 +27,7 @@ class m240101_000001_create_users_table extends Migration
             'current_team_id' => $this->integer()->null(),
             'profile_photo_path' => $this->string(2048)->null(),
             'created_at' => $this->timestamp()->notNull()->defaultExpression('CURRENT_TIMESTAMP'),
-            'updated_at' => $this->timestamp()->notNull()->defaultExpression('CURRENT_TIMESTAMP')->append('ON UPDATE CURRENT_TIMESTAMP'),
+            'updated_at' => $updatedAt,
             'deleted_at' => $this->timestamp()->null(),
         ]);
 
@@ -39,5 +44,3 @@ class m240101_000001_create_users_table extends Migration
         $this->dropTable('{{%users}}');
     }
 }
-
-

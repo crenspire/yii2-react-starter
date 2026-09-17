@@ -8,14 +8,22 @@ use yii\base\Model;
 /**
  * LoginForm is the model behind the login form.
  *
- * @property-read User|null $user
+ * Failed attempts are throttled per email + IP address, and the error message never reveals
+ * whether an account exists for the given email.
  *
+ * @property-read User|null $user
  */
 class LoginForm extends Model
 {
+    /**
+     * A valid bcrypt hash of a random string. Checked when the email is unknown so that
+     * response times don't reveal which accounts exist.
+     */
+    private const DUMMY_HASH = '$2y$13$b0JbeSncGub/7u/AUbQkSeX97PoPbwM3wvQ5YM5L38gNJzM3Jw3SS';
+
     public $email;
     public $password;
-    public $rememberMe = true;
+    public $rememberMe = false;
 
     private $_user = false;
 
@@ -26,15 +34,30 @@ class LoginForm extends Model
     public function rules()
     {
         return [
-            // email and password are both required
+            ['email', 'trim'],
             [['email', 'password'], 'required'],
-            // email must be a valid email address
             ['email', 'email'],
-            // rememberMe must be a boolean value
             ['rememberMe', 'boolean'],
-            // password is validated by validatePassword()
+            ['email', 'validateNotThrottled'],
             ['password', 'validatePassword'],
         ];
+    }
+
+    /**
+     * Blocks the attempt when too many recent logins failed for this email and IP.
+     *
+     * @param string $attribute
+     */
+    public function validateNotThrottled($attribute)
+    {
+        if ($this->hasErrors()) {
+            return;
+        }
+        $attempts = (int) Yii::$app->cache->get($this->throttleKey());
+        if ($attempts >= Yii::$app->params['loginMaxAttempts']) {
+            $minutes = (int) ceil(Yii::$app->params['loginLockoutDuration'] / 60);
+            $this->addError($attribute, "Too many login attempts. Please try again in {$minutes} minutes.");
+        }
     }
 
     /**
@@ -42,26 +65,22 @@ class LoginForm extends Model
      * This method serves as the inline validation for password.
      *
      * @param string $attribute the attribute currently being validated
-     * @param array $params the additional name-value pairs given in the rule
      */
-    public function validatePassword($attribute, $params)
+    public function validatePassword($attribute)
     {
-        if (!$this->hasErrors()) {
-            try {
-                $user = $this->getUser();
+        if ($this->hasErrors()) {
+            return;
+        }
 
-                if (!$user) {
-                    // User doesn't exist
-                    $this->addError('email', 'User does not exist with this email.');
-                } elseif (!$user->validatePassword($this->password)) {
-                    // User exists but password is wrong
-                    $this->addError($attribute, 'Incorrect password.');
-                }
-            } catch (\Exception $e) {
-                // Catch any exceptions during validation
-                Yii::error('Error validating password: ' . $e->getMessage(), 'application');
-                $this->addError('email', 'An error occurred. Please try again.');
-            }
+        $user = $this->getUser();
+        if ($user === null) {
+            // Spend the same time hashing as for a real account
+            Yii::$app->security->validatePassword((string) $this->password, self::DUMMY_HASH);
+        }
+
+        if ($user === null || !$user->validatePassword($this->password)) {
+            $this->recordFailedAttempt();
+            $this->addError($attribute, 'Incorrect email or password.');
         }
     }
 
@@ -71,10 +90,14 @@ class LoginForm extends Model
      */
     public function login()
     {
-        if ($this->validate()) {
-            return Yii::$app->user->login($this->getUser(), $this->rememberMe ? 3600*24*30 : 0);
+        if (!$this->validate()) {
+            return false;
         }
-        return false;
+
+        Yii::$app->cache->delete($this->throttleKey());
+        $duration = $this->rememberMe ? Yii::$app->params['rememberMeDuration'] : 0;
+
+        return Yii::$app->user->login($this->getUser(), $duration);
     }
 
     /**
@@ -85,16 +108,22 @@ class LoginForm extends Model
     public function getUser()
     {
         if ($this->_user === false) {
-            try {
-                $this->_user = User::findByEmail($this->email);
-            } catch (\Exception $e) {
-                // If there's a database error or any exception, return null
-                // This will trigger the "User does not exist" error message
-                Yii::error('Error finding user by email: ' . $e->getMessage(), 'application');
-                $this->_user = null;
-            }
+            $this->_user = User::findByEmail($this->email);
         }
 
         return $this->_user;
+    }
+
+    private function recordFailedAttempt()
+    {
+        $key = $this->throttleKey();
+        $attempts = (int) Yii::$app->cache->get($key);
+        Yii::$app->cache->set($key, $attempts + 1, Yii::$app->params['loginLockoutDuration']);
+    }
+
+    private function throttleKey()
+    {
+        $ip = Yii::$app->request instanceof \yii\web\Request ? Yii::$app->request->userIP : 'cli';
+        return ['login-attempts', mb_strtolower((string) $this->email), $ip];
     }
 }

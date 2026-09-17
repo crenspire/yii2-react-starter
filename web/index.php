@@ -1,10 +1,12 @@
 <?php
 
-// comment out the following two lines when deployed to production
-defined('YII_DEBUG') or define('YII_DEBUG', true);
-defined('YII_ENV') or define('YII_ENV', 'dev');
+require __DIR__ . '/../config/env.php';
 
-require __DIR__ . '/../vendor/autoload.php';
+// Debug mode and environment come from .env (or real environment variables).
+// Both default to production-safe values.
+defined('YII_DEBUG') or define('YII_DEBUG', (bool) env('YII_DEBUG', false));
+defined('YII_ENV') or define('YII_ENV', env('YII_ENV', 'prod'));
+
 require __DIR__ . '/../vendor/yiisoft/yii2/Yii.php';
 
 $config = require __DIR__ . '/../config/web.php';

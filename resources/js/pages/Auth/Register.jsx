@@ -1,185 +1,73 @@
-import { Link, useForm, Head, router, usePage } from '@inertiajs/react';
-import { useForm as useHookForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import AuthLayout from '@/components/layouts/AuthLayout';
-import { toast } from 'sonner';
-import { addCsrfToData } from '@/lib/csrf';
+import { Head, Link, useForm } from '@inertiajs/react'
+import { Loader2 } from 'lucide-react'
+import { FormField } from '@/components/FormField'
+import AuthLayout from '@/components/layouts/AuthLayout'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
-const registerSchema = z.object({
-  fullName: z.string().min(2, 'Full name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  passwordConfirm: z.string(),
-}).refine((data) => data.password === data.passwordConfirm, {
-  message: "Passwords don't match",
-  path: ['passwordConfirm'],
-});
-
-export default function Register({ model, errors: serverErrors }) {
-  const { props } = usePage();
-  const inertiaForm = useForm({
-    fullName: model?.fullName || '',
+export default function Register({ model }) {
+  const { data, setData, post, processing, errors, reset } = useForm({
+    name: model?.name || '',
     email: model?.email || '',
     password: '',
-    passwordConfirm: '',
-  });
+    password_confirm: '',
+  })
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useHookForm({
-    resolver: zodResolver(registerSchema),
-    defaultValues: {
-      fullName: model?.fullName || '',
-      email: model?.email || '',
-      password: '',
-      passwordConfirm: '',
-    },
-  });
+  const submit = (e) => {
+    e.preventDefault()
+    post('/auth/register', {
+      onFinish: () => reset('password', 'password_confirm'),
+    })
+  }
 
-  const onSubmit = (data) => {
-    // Get CSRF token from Inertia shared props (more reliable than meta tags)
-    const csrfToken = props.csrfToken || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    const csrfParam = props.csrfParam || document.querySelector('meta[name="csrf-param"]')?.getAttribute('content');
-    
-    const formData = {
-      name: data.fullName, // Map fullName to name for backend
-      email: data.email,
-      password: data.password,
-      ...(csrfToken && csrfParam ? { [csrfParam]: csrfToken } : {}),
-    };
-    
-    // Use router.post directly to ensure data is sent correctly
-    router.post('/auth/register', formData, {
-      onError: (errors) => {
-        Object.values(errors).forEach((error) => {
-          if (Array.isArray(error)) {
-            error.forEach((err) => toast.error(err));
-          } else {
-            toast.error(error);
-          }
-        });
-      },
-    });
-  };
-
-  const allErrors = { ...errors, ...serverErrors };
+  const input = (name, props) => (
+    <Input
+      id={name}
+      value={data[name]}
+      onChange={e => setData(name, e.target.value)}
+      aria-invalid={!!errors[name]}
+      required
+      {...props}
+    />
+  )
 
   return (
-    <>
-      <Head title="Register | Yii2 - Modern Starter Kit" />
-      <AuthLayout>
-      <Card className="border-0 shadow-none px-6">
-        <CardHeader className="space-y-1 px-0">
-          <CardTitle className="text-2xl font-semibold tracking-tight">Create an account</CardTitle>
-          <CardDescription className="text-base">
-            Enter your information to get started
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-0">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="fullName" className="text-sm font-medium">Full Name</Label>
-              <Input
-                id="fullName"
-                type="text"
-                {...register('fullName')}
-                className={allErrors.fullName ? 'border-destructive' : ''}
-                disabled={isSubmitting || inertiaForm.processing}
-                autoFocus
-                placeholder="Enter your full name"
-              />
-              {allErrors.fullName && (
-                <p className="text-sm text-destructive font-medium">
-                  {typeof allErrors.fullName === 'string' 
-                    ? allErrors.fullName 
-                    : allErrors.fullName?.message || 'Invalid full name'}
-                </p>
-              )}
-            </div>
+    <AuthLayout
+      title="Create an account"
+      description="Enter your details below to get started"
+      footer={(
+        <>
+          Already have an account?
+          {' '}
+          <Link href="/auth/login" className="font-medium underline underline-offset-4">Sign in</Link>
+        </>
+      )}
+    >
+      <Head title="Create an account" />
+      <form onSubmit={submit} className="grid gap-6">
+        <FormField id="name" label="Full name" error={errors.name}>
+          {input('name', { autoComplete: 'name', placeholder: 'Jane Cooper', autoFocus: true })}
+        </FormField>
 
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                {...register('email')}
-                className={allErrors.email ? 'border-destructive' : ''}
-                disabled={isSubmitting || inertiaForm.processing}
-                placeholder="Enter your email"
-              />
-              {allErrors.email && (
-                <p className="text-sm text-destructive font-medium">
-                  {typeof allErrors.email === 'string' 
-                    ? allErrors.email 
-                    : allErrors.email?.message || 'Invalid email'}
-                </p>
-              )}
-            </div>
+        <FormField id="email" label="Email" error={errors.email}>
+          {input('email', { type: 'email', autoComplete: 'email', placeholder: 'you@example.com' })}
+        </FormField>
 
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                {...register('password')}
-                className={allErrors.password ? 'border-destructive' : ''}
-                disabled={isSubmitting || inertiaForm.processing}
-                placeholder="Create a password"
-              />
-              {allErrors.password && (
-                <p className="text-sm text-destructive font-medium">
-                  {typeof allErrors.password === 'string' 
-                    ? allErrors.password 
-                    : allErrors.password?.message || 'Invalid password'}
-                </p>
-              )}
-            </div>
+        <div className="grid gap-6 sm:grid-cols-2 sm:gap-4">
+          <FormField id="password" label="Password" error={errors.password}>
+            {input('password', { type: 'password', autoComplete: 'new-password', minLength: 8 })}
+          </FormField>
+          <FormField id="password_confirm" label="Confirm" error={errors.password_confirm}>
+            {input('password_confirm', { type: 'password', autoComplete: 'new-password' })}
+          </FormField>
+        </div>
+        <p className="text-muted-foreground -mt-4 text-sm">Use at least 8 characters.</p>
 
-            <div className="space-y-2">
-              <Label htmlFor="passwordConfirm" className="text-sm font-medium">Confirm Password</Label>
-              <Input
-                id="passwordConfirm"
-                type="password"
-                {...register('passwordConfirm')}
-                className={allErrors.passwordConfirm ? 'border-destructive' : ''}
-                disabled={isSubmitting || inertiaForm.processing}
-                placeholder="Confirm your password"
-              />
-              {allErrors.passwordConfirm && (
-                <p className="text-sm text-destructive font-medium">
-                  {typeof allErrors.passwordConfirm === 'string' 
-                    ? allErrors.passwordConfirm 
-                    : allErrors.passwordConfirm?.message || 'Passwords do not match'}
-                </p>
-              )}
-            </div>
-
-            <Button 
-              type="submit" 
-              variant="default"
-              className="w-full" 
-              disabled={isSubmitting || inertiaForm.processing}
-            >
-              {isSubmitting || inertiaForm.processing ? 'Creating account...' : 'Create account'}
-            </Button>
-          </form>
-
-          <div className="mt-6 text-center text-sm">
-            <span className="text-muted-foreground">Already have an account? </span>
-            <Link href="/auth/login" className="text-primary hover:underline font-medium">
-              Sign in
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
+        <Button type="submit" className="w-full" disabled={processing}>
+          {processing && <Loader2 className="animate-spin" />}
+          Create account
+        </Button>
+      </form>
     </AuthLayout>
-    </>
-  );
+  )
 }

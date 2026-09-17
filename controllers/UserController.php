@@ -4,13 +4,19 @@ namespace app\controllers;
 
 use Yii;
 use yii\filters\AccessControl;
+use yii\filters\VerbFilter;
 use yii\web\NotFoundHttpException;
 use Crenspire\Yii2Inertia\Inertia;
-use app\controllers\BaseController;
 use app\models\User;
 
+/**
+ * User management. Restricted to admins.
+ */
 class UserController extends BaseController
 {
+    const MAX_PER_PAGE = 100;
+    const SORTABLE_COLUMNS = ['id', 'name', 'email', 'role', 'email_verified_at', 'created_at', 'updated_at'];
+
     /**
      * {@inheritdoc}
      */
@@ -23,92 +29,76 @@ class UserController extends BaseController
                     [
                         'allow' => true,
                         'roles' => ['@'],
+                        'matchCallback' => function () {
+                            return Yii::$app->user->identity->isAdmin();
+                        },
                     ],
+                ],
+                'denyCallback' => [$this, 'denyAccess'],
+            ],
+            'verbs' => [
+                'class' => VerbFilter::class,
+                'actions' => [
+                    'index' => ['get'],
+                    'view' => ['get'],
+                    'create' => ['get', 'post'],
+                    'update' => ['get', 'post', 'put'],
+                    'delete' => ['post'],
                 ],
             ],
         ];
     }
 
     /**
-     * Lists all users.
-     *
-     * @return string
+     * Lists users with search, filters, sorting and pagination.
      */
     public function actionIndex()
     {
-        $request = Yii::$app->request;
-        $search = $request->get('search', '');
-        $page = (int)$request->get('page', 1);
-        $perPage = (int)$request->get('per_page', 20);
-        $sortBy = $request->get('sort_by', 'created_at');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $emailVerified = $request->get('email_verified', '');
-        $dateFrom = $request->get('date_from', '');
-        $dateTo = $request->get('date_to', '');
+        $request = $this->request;
+        $search = trim((string) $request->get('search', ''));
+        $emailVerified = (string) $request->get('email_verified', '');
+        $dateFrom = $this->parseDate($request->get('date_from'));
+        $dateTo = $this->parseDate($request->get('date_to'));
+        $perPage = min(max((int) $request->get('per_page', 20), 1), self::MAX_PER_PAGE);
+        $sortBy = in_array($request->get('sort_by'), self::SORTABLE_COLUMNS, true) ? $request->get('sort_by') : 'created_at';
+        $sortOrder = strtolower((string) $request->get('sort_order')) === 'asc' ? 'asc' : 'desc';
 
         $query = User::find();
 
-        // Apply search filter
-        if (!empty($search)) {
-            $query->andWhere([
-                'or',
-                ['like', 'name', $search],
-                ['like', 'email', $search],
-            ]);
+        if ($search !== '') {
+            $query->andWhere(['or', ['like', 'name', $search], ['like', 'email', $search]]);
         }
-
-        // Apply email verification filter
-        if ($emailVerified !== '') {
-            if ($emailVerified === 'verified') {
-                $query->andWhere(['is not', 'email_verified_at', null]);
-            } elseif ($emailVerified === 'unverified') {
-                $query->andWhere(['email_verified_at' => null]);
-            }
+        if ($emailVerified === 'verified') {
+            $query->andWhere(['not', ['email_verified_at' => null]]);
+        } elseif ($emailVerified === 'unverified') {
+            $query->andWhere(['email_verified_at' => null]);
+        } else {
+            $emailVerified = '';
         }
-
-        // Apply date range filter
-        if (!empty($dateFrom)) {
-            $query->andWhere(['>=', 'created_at', $dateFrom]);
+        if ($dateFrom !== '') {
+            $query->andWhere(['>=', 'created_at', $dateFrom . ' 00:00:00']);
         }
-        if (!empty($dateTo)) {
+        if ($dateTo !== '') {
             $query->andWhere(['<=', 'created_at', $dateTo . ' 23:59:59']);
         }
 
-        // Get total count before pagination
-        $total = $query->count();
+        $total = (int) $query->count();
+        $lastPage = max((int) ceil($total / $perPage), 1);
+        $page = min(max((int) $request->get('page', 1), 1), $lastPage);
 
-        // Apply sorting
-        $allowedSortColumns = ['id', 'name', 'email', 'created_at', 'updated_at'];
-        $sortBy = in_array($sortBy, $allowedSortColumns) ? $sortBy : 'created_at';
-        $sortOrder = strtolower($sortOrder) === 'asc' ? SORT_ASC : SORT_DESC;
-        $query->orderBy([$sortBy => $sortOrder]);
-
-        // Apply pagination
-        $offset = ($page - 1) * $perPage;
-        $users = $query->offset($offset)
+        $users = $query
+            ->orderBy([$sortBy => $sortOrder === 'asc' ? SORT_ASC : SORT_DESC, 'id' => SORT_DESC])
+            ->offset(($page - 1) * $perPage)
             ->limit($perPage)
             ->all();
 
-        // Format users for frontend
-        $usersData = [];
-        foreach ($users as $user) {
-            $usersData[] = [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'email_verified_at' => $user->email_verified_at,
-                'created_at' => $user->created_at,
-                'updated_at' => $user->updated_at,
-            ];
-        }
-
         return Inertia::render('Users/Index', [
-            'users' => $usersData,
+            'users' => array_map(static fn (User $user) => $user->toArray(), $users),
             'pagination' => [
                 'current_page' => $page,
                 'per_page' => $perPage,
                 'total' => $total,
-                'last_page' => ceil($total / $perPage),
+                'last_page' => $lastPage,
             ],
             'filters' => [
                 'search' => $search,
@@ -127,185 +117,105 @@ class UserController extends BaseController
      * Displays a single user.
      *
      * @param int $id
-     * @return string
      * @throws NotFoundHttpException if the user cannot be found
      */
     public function actionView($id)
     {
-        $user = $this->findModel($id);
-
         return Inertia::render('Users/View', [
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'email_verified_at' => $user->email_verified_at,
-                'created_at' => $user->created_at,
-                'updated_at' => $user->updated_at,
-            ],
+            'user' => $this->findModel($id)->toArray(),
         ]);
     }
 
     /**
      * Creates a new user.
-     *
-     * @return string|\yii\web\Response
      */
     public function actionCreate()
     {
-        $model = new User();
-        $model->scenario = 'create';
+        $model = new User(['scenario' => User::SCENARIO_ADMIN_CREATE, 'role' => User::ROLE_USER]);
 
-        if (Yii::$app->request->isPost) {
-            if ($model->load(Yii::$app->request->post(), '')) {
-                if ($model->validate() && $model->save()) {
-                    // For Inertia requests, directly render the index page
-                    // This allows onSuccess callback to fire properly
-                    if (Yii::$app->request->headers->get('X-Inertia')) {
-                        return $this->actionIndex();
-                    }
-                    return $this->redirect(['index']);
-                }
-            }
-            
-            // If we get here, validation failed - return form with errors
-            // Return 200 status but include errors in props (similar to Login form)
-            // Inertia will handle this and show errors inline
-            return Inertia::render('Users/Form', [
-                'user' => [
-                    'name' => $model->name ?? '',
-                    'email' => $model->email ?? '',
-                    'password' => '',
-                ],
-                'errors' => $model->errors,
-            ]);
+        if ($model->load($this->request->post(), '') && $model->save()) {
+            Yii::$app->session->setFlash('success', 'User created successfully.');
+            return $this->inertiaRedirect(['/user/index']);
         }
 
-        // GET request - show empty form
-        return Inertia::render('Users/Form', [
-            'user' => [
-                'name' => '',
-                'email' => '',
-                'password' => '',
-            ],
-            'errors' => [],
-        ]);
+        return $this->renderForm($model);
     }
 
     /**
-     * Updates an existing user.
+     * Updates an existing user. Leaving the password blank keeps the current one.
      *
      * @param int $id
-     * @return string|\yii\web\Response
      * @throws NotFoundHttpException if the user cannot be found
      */
     public function actionUpdate($id)
     {
         $model = $this->findModel($id);
+        $model->scenario = User::SCENARIO_ADMIN_UPDATE;
 
-        // Handle both POST and PUT requests
-        $isPost = Yii::$app->request->isPost;
-        $isPut = Yii::$app->request->isPut;
-        
-        if ($isPost || $isPut) {
-            // For PUT requests, get data from bodyParams; for POST, use post()
-            // If bodyParams is empty for PUT, try parsing rawBody
-            if ($isPut) {
-                $requestData = Yii::$app->request->bodyParams;
-                // If bodyParams is empty, parse JSON from rawBody
-                if (empty($requestData) && Yii::$app->request->contentType === 'application/json') {
-                    $rawBody = Yii::$app->request->rawBody;
-                    if (!empty($rawBody)) {
-                        $requestData = json_decode($rawBody, true) ?: [];
-                    }
-                }
-            } else {
-                $requestData = Yii::$app->request->post();
+        if (!$this->request->getIsGet() && $model->load($this->request->getBodyParams(), '')) {
+            if ((int) $model->id === (int) Yii::$app->user->id && $model->role !== User::ROLE_ADMIN) {
+                $model->addError('role', 'You cannot remove your own admin role.');
+            } elseif ($model->save()) {
+                Yii::$app->session->setFlash('success', 'User updated successfully.');
+                return $this->inertiaRedirect(['/user/index']);
             }
-            
-            // Load the data
-            if ($model->load($requestData, '')) {
-                // If password is empty, don't validate or save it
-                if (empty($requestData['password'])) {
-                    // Only validate and save name and email
-                    // Reset scenario to default before validating specific attributes
-                    $model->scenario = \yii\base\Model::SCENARIO_DEFAULT;
-                    if ($model->validate(['name', 'email'])) {
-                        $model->save(false, ['name', 'email']);
-                        // For Inertia requests, directly render the index page
-                        // This allows onSuccess callback to fire properly
-                        if (Yii::$app->request->headers->get('X-Inertia')) {
-                            return $this->actionIndex();
-                        }
-                        return $this->redirect(['index']);
-                    }
-                } else {
-                    // Password is provided, validate everything
-                    // Use default scenario - password validation rule applies to all scenarios
-                    $model->scenario = \yii\base\Model::SCENARIO_DEFAULT;
-                    if ($model->validate() && $model->save()) {
-                        // For Inertia requests, directly render the index page
-                        // This allows onSuccess callback to fire properly
-                        if (Yii::$app->request->headers->get('X-Inertia')) {
-                            return $this->actionIndex();
-                        }
-                        return $this->redirect(['index']);
-                    }
-                }
-            }
-            
-            // If we get here, validation failed - return form with errors
-            // Return 200 status but include errors in props (similar to Login form)
-            // Inertia will handle this and show errors inline
-            return Inertia::render('Users/Form', [
-                'user' => [
-                    'id' => $model->id,
-                    'name' => $model->name ?? '',
-                    'email' => $model->email ?? '',
-                    'password' => '',
-                ],
-                'errors' => $model->errors,
-            ]);
         }
 
-        // GET request - show form with current data
-        return Inertia::render('Users/Form', [
-            'user' => [
-                'id' => $model->id,
-                'name' => $model->name,
-                'email' => $model->email,
-                'password' => '',
-            ],
-            'errors' => [],
-        ]);
+        return $this->renderForm($model);
     }
 
     /**
-     * Deletes an existing user (soft delete).
+     * Soft-deletes a user.
      *
      * @param int $id
-     * @return \yii\web\Response
      * @throws NotFoundHttpException if the user cannot be found
      */
     public function actionDelete($id)
     {
         $model = $this->findModel($id);
-        
-        // Prevent deleting yourself
-        if ($model->id === Yii::$app->user->id) {
+
+        if ((int) $model->id === (int) Yii::$app->user->id) {
             Yii::$app->session->setFlash('error', 'You cannot delete your own account.');
-            return $this->redirect(['index']);
+        } else {
+            $model->trash();
+            Yii::$app->session->setFlash('success', 'User deleted successfully.');
         }
 
-        // Soft delete
-        $model->trash();
+        // Back to the list with its current filters and page
+        return $this->redirectBack();
+    }
 
-        return Inertia::location('/users');
+    /**
+     * @param User $model
+     */
+    private function renderForm(User $model)
+    {
+        return Inertia::render('Users/Form', [
+            'user' => [
+                'id' => $model->id,
+                'name' => (string) $model->name,
+                'email' => (string) $model->email,
+                'role' => (string) $model->role,
+            ],
+            'roles' => User::roles(),
+            'isSelf' => $model->id !== null && (int) $model->id === (int) Yii::$app->user->id,
+            'errors' => (object) $model->getFirstErrors(),
+        ]);
+    }
+
+    /**
+     * @param mixed $value
+     * @return string the date as Y-m-d, or '' when not a valid date
+     */
+    private function parseDate($value)
+    {
+        $date = is_string($value) ? \DateTime::createFromFormat('!Y-m-d', $value) : false;
+
+        return $date && $date->format('Y-m-d') === $value ? $value : '';
     }
 
     /**
      * Finds the User model based on its primary key value.
-     * If the model is not found, a 404 HTTP exception will be thrown.
      *
      * @param int $id
      * @return User the loaded model
@@ -313,7 +223,7 @@ class UserController extends BaseController
      */
     protected function findModel($id)
     {
-        if (($model = User::findOne($id)) !== null) {
+        if (($model = User::findOne((int) $id)) !== null) {
             return $model;
         }
 

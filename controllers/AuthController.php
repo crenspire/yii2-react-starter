@@ -3,13 +3,14 @@
 namespace app\controllers;
 
 use Yii;
-use yii\web\Response;
 use yii\filters\AccessControl;
 use yii\filters\VerbFilter;
-use app\models\LoginForm;
-use app\models\User;
 use Crenspire\Yii2Inertia\Inertia;
-use app\controllers\BaseController;
+use app\models\LoginForm;
+use app\models\PasswordResetRequestForm;
+use app\models\PasswordResetToken;
+use app\models\ResetPasswordForm;
+use app\models\User;
 
 class AuthController extends BaseController
 {
@@ -29,11 +30,16 @@ class AuthController extends BaseController
                         'roles' => ['@'],
                     ],
                 ],
+                'denyCallback' => [$this, 'denyAccess'],
             ],
             'verbs' => [
                 'class' => VerbFilter::class,
                 'actions' => [
                     'logout' => ['post'],
+                    'login' => ['get', 'post'],
+                    'register' => ['get', 'post'],
+                    'forgot-password' => ['get', 'post'],
+                    'reset-password' => ['get', 'post'],
                 ],
             ],
         ];
@@ -41,151 +47,113 @@ class AuthController extends BaseController
 
     /**
      * Login action.
-     *
-     * @return Response|string
      */
     public function actionLogin()
     {
-        if (!Yii::$app->user->isGuest) {
-            return Inertia::location('/dashboard');
+        if ($redirect = $this->redirectIfAuthenticated()) {
+            return $redirect;
         }
 
         $model = new LoginForm();
 
-        if (Yii::$app->request->isPost) {
-            try {
-                if ($model->load(Yii::$app->request->post(), '')) {
-                    if ($model->login()) {
-                        // Login successful - redirect to dashboard
-                        return Inertia::location('/dashboard');
-                    }
-                    // Login failed - model has errors, return form with errors
-                }
-            } catch (\Exception $e) {
-                // Catch any exceptions and add them as errors
-                Yii::error('Login error: ' . $e->getMessage(), 'application');
-                $model->addError('email', 'An error occurred during login. Please try again.');
-            }
-            
-            // If we get here, either load failed or login failed - return form with errors
-            return Inertia::render('Auth/Login', [
-                'model' => [
-                    'email' => $model->email ?? '',
-                    'rememberMe' => $model->rememberMe ?? false,
-                ],
-                'errors' => $model->errors, // Pass validation errors
-            ]);
+        if ($model->load($this->request->post(), '') && $model->login()) {
+            Yii::$app->session->setFlash('success', 'Welcome back!');
+            // Full page load: the CSRF token and layout change after signing in
+            return Inertia::location(Yii::$app->user->getReturnUrl(['/dashboard']));
         }
 
-        // GET request - show empty form
         return Inertia::render('Auth/Login', [
             'model' => [
-                'email' => '',
-                'rememberMe' => false,
+                'email' => (string) $model->email,
+                'rememberMe' => (bool) $model->rememberMe,
             ],
-            'errors' => [],
+            'errors' => (object) $model->getFirstErrors(),
         ]);
     }
 
     /**
      * Register action.
-     *
-     * @return Response|string
      */
     public function actionRegister()
     {
-        if (!Yii::$app->user->isGuest) {
-            return $this->redirect(['/dashboard']);
+        if ($redirect = $this->redirectIfAuthenticated()) {
+            return $redirect;
         }
 
-        $model = new User();
+        $model = new User(['scenario' => User::SCENARIO_REGISTER]);
 
-        if (Yii::$app->request->isPost) {
-            // Use 'create' scenario for POST requests
-            $model->scenario = 'create';
-            
-            if ($model->load(Yii::$app->request->post(), '')) {
-                // Name and email are required, no username generation needed
-                if ($model->validate() && $model->save()) {
-                    Yii::$app->user->login($model, 3600 * 24 * 30); // 30 days
-                    return Inertia::location('/dashboard');
-                }
-            }
-
-            // Return form with errors if validation failed
-            return Inertia::render('Auth/Register', [
-                'model' => [
-                    'fullName' => $model->name ?? '',
-                    'email' => $model->email ?? '',
-                ],
-                'errors' => $model->errors,
-            ]);
+        if ($model->load($this->request->post(), '') && $model->save()) {
+            Yii::$app->user->login($model);
+            Yii::$app->session->setFlash('success', 'Your account has been created.');
+            return Inertia::location(Yii::$app->user->getReturnUrl(['/dashboard']));
         }
 
-        // GET request - show empty form
         return Inertia::render('Auth/Register', [
             'model' => [
-                'fullName' => '',
-                'email' => '',
+                'name' => (string) $model->name,
+                'email' => (string) $model->email,
             ],
-            'errors' => [],
+            'errors' => (object) $model->getFirstErrors(),
         ]);
     }
 
     /**
      * Logout action.
-     *
-     * @return Response
      */
     public function actionLogout()
     {
-        // Destroy the user session (this also clears remember me cookies)
+        // Also destroys the session and removes the remember-me cookie
         Yii::$app->user->logout();
-        
-        // Explicitly destroy the session to ensure it's cleared
-        if (Yii::$app->has('session')) {
-            Yii::$app->session->destroy();
-        }
-        
-        // For Inertia requests, use Inertia::location which handles redirects properly
-        if (Yii::$app->request->headers->get('X-Inertia')) {
-            return Inertia::location('/');
-        }
-        
-        // Use regular redirect for non-Inertia requests
-        return $this->redirect(['/']);
+
+        return Inertia::location(Yii::$app->homeUrl);
     }
 
     /**
-     * Forgot password action.
-     *
-     * @return Response|string
+     * Sends a password reset link.
      */
     public function actionForgotPassword()
     {
-        if (!Yii::$app->user->isGuest) {
-            return $this->redirect(['/dashboard']);
+        if ($redirect = $this->redirectIfAuthenticated()) {
+            return $redirect;
         }
 
-        // TODO: Implement password reset logic
-        return Inertia::render('Auth/ForgotPassword');
+        $model = new PasswordResetRequestForm();
+
+        if ($model->load($this->request->post(), '') && $model->sendEmail()) {
+            Yii::$app->session->setFlash(
+                'success',
+                'If an account exists for that email, we have sent a link to reset your password.'
+            );
+            return $this->inertiaRedirect(['/auth/forgot-password']);
+        }
+
+        return Inertia::render('Auth/ForgotPassword', [
+            'errors' => (object) $model->getFirstErrors(),
+        ]);
     }
 
     /**
-     * Reset password action.
+     * Sets a new password using the token from the reset email.
      *
-     * @return Response|string
+     * @param string|null $token
      */
     public function actionResetPassword($token = null)
     {
-        if (!Yii::$app->user->isGuest) {
-            return $this->redirect(['/dashboard']);
+        if ($redirect = $this->redirectIfAuthenticated()) {
+            return $redirect;
         }
 
-        // TODO: Implement password reset logic
+        $model = new ResetPasswordForm(['token' => $token]);
+
+        if ($model->load($this->request->post(), '') && $model->resetPassword()) {
+            Yii::$app->session->setFlash('success', 'Your password has been reset. You can now sign in.');
+            return $this->inertiaRedirect(['/auth/login']);
+        }
+
         return Inertia::render('Auth/ResetPassword', [
-            'token' => $token,
+            'token' => (string) $model->token,
+            'valid' => PasswordResetToken::findValid($model->token) !== null,
+            'errors' => (object) $model->getFirstErrors(),
         ]);
     }
 }
-

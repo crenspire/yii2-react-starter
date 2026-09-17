@@ -34,3 +34,9 @@ tests/_support/_generated
 
 #vagrant folder
 /.vagrant
+
+# local environment configuration (secrets)
+.env
+
+# frontend build output (run `npm run build` when deploying)
+/web/dist

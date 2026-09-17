@@ -19,11 +19,11 @@
   },
   "minimum-stability": "stable",
   "require": {
-    "php": ">=7.4.0",
-    "yiisoft/yii2": "~2.0.45",
-    "yiisoft/yii2-bootstrap5": "~2.0.2",
+    "php": ">=8.2",
+    "yiisoft/yii2": "~2.0.55",
     "yiisoft/yii2-symfonymailer": "~2.0.3",
-    "crenspire/yii2-inertia": "^1.0"
+    "crenspire/yii2-inertia": "^2.0",
+    "vlucas/phpdotenv": "^5.6"
   },
   "require-dev": {
     "yiisoft/yii2-debug": "~2.1.0",
@@ -43,15 +43,15 @@
     "process-timeout": 1800,
     "fxp-asset": {
       "enabled": false
+    },
+    "platform": {
+      "php": "8.2.0"
     }
   },
   "scripts": {
-    "post-install-cmd": [
-      "yii\\composer\\Installer::postInstall"
-    ],
     "post-create-project-cmd": [
       "yii\\composer\\Installer::postCreateProject",
-      "yii\\composer\\Installer::postInstall"
+      "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
     ]
   },
   "extra": {
@@ -62,11 +62,6 @@
           "web/assets": "0777",
           "yii": "0755"
         }
-      ]
-    },
-    "yii\\composer\\Installer::postInstall": {
-      "generateCookieValidationKey": [
-        "config/web.php"
       ]
     }
   },

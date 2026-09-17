@@ -7,7 +7,10 @@ use yii\base\BootstrapInterface;
 use Crenspire\Yii2Inertia\Inertia;
 
 /**
- * Bootstrap component to share CSRF token and user data with all Inertia responses
+ * Configures the props shared with every page.
+ *
+ * Asset versioning, CSRF protection (XSRF-TOKEN cookie) and JSON request bodies are handled by the
+ * `inertia` component of crenspire/yii2-inertia (see config/web.php).
  */
 class InertiaBootstrap implements BootstrapInterface
 {
@@ -16,30 +19,22 @@ class InertiaBootstrap implements BootstrapInterface
      */
     public function bootstrap($app)
     {
-        // Share CSRF token with all Inertia responses
-        // Use a closure to ensure we get a fresh token for each request
-        Inertia::share('csrfToken', function () use ($app) {
-            // Always get the current CSRF token for the request
-            return $app->request->csrfToken;
-        });
-
-        Inertia::share('csrfParam', function () use ($app) {
-            // Always get the current CSRF param name
-            return $app->request->csrfParam;
-        });
-
-            // Share user data if authenticated
-            Inertia::share('user', function () {
+        Inertia::share([
+            // Namespaced under "auth" so page props named "user" (e.g. the user being edited) can't replace it
+            'auth' => static function () {
+                /** @var \app\models\User|null $user */
                 $user = Yii::$app->user->identity;
-                if ($user) {
-                    return [
-                        'id' => $user->id,
-                        'name' => $user->name,
-                        'email' => $user->email,
-                    ];
-                }
-                return null;
-            });
+
+                return [
+                    'user' => $user === null
+                        ? null
+                        : $user->toArray(['id', 'name', 'email', 'role']) + ['isAdmin' => $user->isAdmin()],
+                ];
+            },
+            // One-time messages set with Yii::$app->session->setFlash('success'|'error'|'info', ...)
+            'flash' => static function () {
+                return (object) Yii::$app->session->getAllFlashes(true);
+            },
+        ]);
     }
 }
-
