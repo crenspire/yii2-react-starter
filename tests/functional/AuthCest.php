@@ -15,6 +15,7 @@ class AuthCest
             'email_verified_at' => '2020-01-01 00:00:00',
         ]);
 
+        /** @var User $user */
         $user = $I->grabRecord(User::class, ['email' => 'new@example.com']);
         $I->assertSame(User::ROLE_USER, $user->role);
         $I->assertNull($user->email_verified_at);

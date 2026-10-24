@@ -27,6 +27,8 @@ use yii\db\ActiveQuery;
  * ```
  * 
  * The model must have a `deleted_at` column (timestamp, nullable)
+ * 
+ * @extends Behavior<ActiveRecord&object{deleted_at: string|null}>
  */
 class SoftDeleteBehavior extends Behavior
 {
