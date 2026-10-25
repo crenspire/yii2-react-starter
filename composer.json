@@ -34,7 +34,9 @@
     "codeception/module-asserts": "^3.0 || ^1.1",
     "codeception/module-yii2": "^1.1",
     "codeception/module-filesystem": "^3.0 || ^2.0 || ^1.1",
-    "codeception/verify": "^3.0 || ^2.2"
+    "codeception/verify": "^3.0 || ^2.2",
+    "phpstan/phpstan": "^2.3",
+    "mspirkov/yii2-phpstan": "^0.16"
   },
   "config": {
     "allow-plugins": {
@@ -49,6 +51,7 @@
     }
   },
   "scripts": {
+    "phpstan": "./vendor/bin/phpstan",
     "post-create-project-cmd": [
       "yii\\composer\\Installer::postCreateProject",
       "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""

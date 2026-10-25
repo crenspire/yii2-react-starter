@@ -40,3 +40,6 @@ tests/_support/_generated
 
 # frontend build output (run `npm run build` when deploying)
 /web/dist
+
+# local phpstan config
+/phpstan.neon

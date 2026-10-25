@@ -51,6 +51,7 @@ class UsersCest
             'password' => 'password123',
             'role' => 'user',
         ]);
+        /** @var User $user */
         $user = $I->grabRecord(User::class, ['email' => 'created@example.com']);
 
         $I->sendAjaxPostRequest("/users/{$user->id}/edit", [

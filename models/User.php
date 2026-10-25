@@ -20,7 +20,7 @@ use app\behaviors\SoftDeleteBehavior;
  * @property string $remember_token
  * @property integer $current_team_id
  * @property string $profile_photo_path
- * @property string $email_verified_at
+ * @property string|null $email_verified_at
  * @property string $deleted_at
  * @property string $created_at
  * @property string $updated_at
